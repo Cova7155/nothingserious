@@ -1,7 +1,7 @@
-import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=4';
+import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=5';
 
 /* ============ helpers ============ */
-const V = 4;
+const V = 5;
 const CANON = 'dex.godpack.live';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -312,17 +312,23 @@ function zig(y, amp, n, x0, x1, seed) {
 const TEAR = zig(11.2, .9, 16, 0, 100, 3), CRIMP_T = zig(1.1, .9, 26, 0, 100, 7), CRIMP_B = zig(98.9, .9, 26, 100, 0, 9);
 const CLIP_TOP = `polygon(${[...CRIMP_T, ...[...TEAR].reverse()].join(',')})`;
 const CLIP_BODY = `polygon(${[...TEAR, ...CRIMP_B].join(',')})`;
-function pack({ line1 = 'Daily pack', line2 = '7 cards inside', tag = 'button', id = '', small = false, label = '' }) {
-  const attrs = tag === 'button' ? `type="button" aria-label="${esc(label || 'Rip ' + line1)}"` : 'aria-hidden="true"';
-  return `<div class="pkwrap${small ? ' pkwrap--sm' : ''}"><${tag} class="pk"${id ? ` id="${id}"` : ''} ${attrs} style="--clip-top:${CLIP_TOP};--clip-body:${CLIP_BODY};container-type:inline-size">
-    <span class="pk__body"><span class="pk__seal pk__seal--b"></span><img class="pk__logo" src="/img/godpack-logo.webp" alt="" width="409" height="89"><span class="pk__win"><svg viewBox="0 0 63 88"><use href="#cardback"/></svg></span><span class="pk__txt" style="font-size:4.3cqw"><b>${esc(line1)}</b><span>${esc(line2)}</span></span></span>
+// inside: the category of each card in the pack, shown as a stack of card tops through the window
+const groupsOf = prompts => prompts.map(q => q.gp);
+function pack({ line1 = 'Daily pack', line2 = '', tag = 'button', id = '', small = false, label = '', inside = null, instant = false }) {
+  const says = inside ? `${inside.length} cards: ${inside.map(g => GROUPS[g] || 'Prompt').join(', ')}` : '';
+  const attrs = tag === 'button' ? `type="button" aria-label="${esc((label || 'Rip ' + line1) + (says ? '. ' + says : ''))}"` : 'aria-hidden="true"';
+  const win = inside
+    ? `<span class="pk__win pk__win--stack">${inside.map((g, i) => `<span class="pk__card" style="--i:${i};--accent:${GROUP_COLOR[g] || '#ccc6e4'}"><b>${esc(GROUPS[g] || 'Prompt')}</b></span>`).join('')}</span><span class="pk__badge"><b>${inside.length}</b>cards</span>`
+    : `<span class="pk__win"><svg viewBox="0 0 63 88"><use href="#cardback"/></svg></span>`;
+  return `<div class="pkwrap${small ? ' pkwrap--sm' : ''}"><${tag} class="pk${inside ? ' pk--stack' : ''}${instant ? ' pk--now' : ''}"${id ? ` id="${id}"` : ''} ${attrs} style="--clip-top:${CLIP_TOP};--clip-body:${CLIP_BODY};container-type:inline-size">
+    <span class="pk__body"><span class="pk__seal pk__seal--b"></span><img class="pk__logo" src="/img/godpack-logo.webp" alt="" width="409" height="89">${win}<span class="pk__txt"><b>${esc(line1)}</b>${line2 ? `<span>${esc(line2)}</span>` : ''}</span></span>
     <span class="pk__top"><span class="pk__seal pk__seal--t"></span></span>
   </${tag}><span class="pk__shadow"></span></div>`;
 }
-async function ripPack(line1, line2) {
+async function ripPack(line1, line2, inside) {
   let el = $('#ripPack');
   if (!el) {
-    view().innerHTML = `<div class="col"><section class="hero" style="min-height:50vh;align-content:center">${pack({ line1, line2, tag: 'div', id: 'ripPack' })}</section></div>`;
+    view().innerHTML = `<div class="col"><section class="hero" style="min-height:50vh;align-content:center">${pack({ line1, line2, tag: 'div', id: 'ripPack', inside, instant: true })}</section></div>`;
     el = $('#ripPack');
   }
   if (reduced) return;
@@ -454,9 +460,9 @@ function viewHome() {
     <section class="hero">
       <p class="label kicker">Daily pack #${n} · ${esc(fmtDate(new Date()))}</p>
       <h1 class="display"><span>Name the Pokémon</span><span class="l2">nobody else would.</span></h1>
-      ${done ? todayCard(n, done) : `${pack({ line1: `Daily pack #${n}`, id: 'ripPack', label: 'Rip today’s pack' })}
+      ${done ? todayCard(n, done) : `${pack({ line1: `Daily pack #${n}`, id: 'ripPack', label: 'Rip today’s pack', inside: groupsOf(dex.dailyPrompts(n)) })}
         <button class="btn" id="ripBtn" type="button">${resume ? 'Finish today’s pack' : 'Rip today’s pack'}${icon('i-arrow')}</button>
-        <p class="meta"><span><b>7</b> prompts</span><span class="dot"></span><span><b>25s</b> each</span><span class="dot"></span><span>same pack for everyone</span></p>
+        <p class="meta"><span><b>${SECONDS} seconds</b> a card</span><span class="dot"></span><span>same pack for everyone</span></p>
         ${!S.profile?.id && !Object.keys(S.history).length && passkeysOk() ? `<a class="link back" href="/me" data-link>Played before? Sign in</a>` : ''}`}
     </section>
     ${exampleHTML()}
@@ -651,7 +657,7 @@ async function startDaily() {
   let ticket = resume?.ticket || null, asking = false;
   const ask = () => { if (ticket || asking) return; asking = true; api(`/daily/ticket?day=${n}`).then(r => { ticket = r.ticket; if (S.progress?.day === n) { S.progress.ticket = ticket; save('progress'); } }).catch(() => { /* offline is fine */ }).finally(() => { asking = false; }); };
   ask();
-  await ripPack(`Daily pack #${n}`, '7 cards inside');
+  await ripPack(`Daily pack #${n}`, '', groupsOf(prompts));
   const out = await runPack({ label: `Daily pack #${n}`, prompts, seed: 'd' + n, resume, onCard: (picks, ms) => { if (picks.length < 4) ask(); S.progress = { day: n, picks, ms, ticket }; save('progress'); } });
   if (!out) return;
   const res = dex.scoreRun(prompts, out.picks, 'd' + n);
@@ -664,7 +670,7 @@ async function startUnlimited() {
   primeKeyboard();
   if (location.pathname !== '/unlimited') history.replaceState({}, '', '/unlimited');
   const seed = (Math.random() * 1e9) | 0, prompts = dex.randomPrompts(seed);
-  await ripPack('Unlimited', 'Random pack');
+  await ripPack('Unlimited', 'Random pack', groupsOf(prompts));
   const out = await runPack({ label: 'Unlimited', prompts, seed: 'u' + seed });
   if (!out) return;
   const u = S.extra.unlimited, res = dex.scoreRun(prompts, out.picks, 'u' + seed);
@@ -677,7 +683,7 @@ async function startPack(id) {
   primeKeyboard();
   const seed = (Math.random() * 1e9) | 0;
   const prompts = p.id === 'kanto' ? dex.kantoPrompts(seed) : dex.randomPrompts(seed, p.groups);
-  await ripPack(p.name, 'Themed pack');
+  await ripPack(p.name, 'Themed pack', groupsOf(prompts));
   const out = await runPack({ label: p.name, prompts, seed: 'p' + seed });
   if (!out) return;
   const res = dex.scoreRun(prompts, out.picks, 'p' + seed);
@@ -687,7 +693,7 @@ async function startPack(id) {
 async function startArchive(d) {
   primeKeyboard();
   const prompts = dex.dailyPrompts(d);
-  await ripPack(`Daily pack #${d}`, 'From the archive');
+  await ripPack(`Daily pack #${d}`, 'From the archive', groupsOf(prompts));
   const out = await runPack({ label: `Archive #${d}`, prompts, seed: 'd' + d });
   if (!out) return;
   const res = dex.scoreRun(prompts, out.picks, 'd' + d);
@@ -778,7 +784,7 @@ function viewUnlimited() {
   view().innerHTML = `<div class="col"><section class="hero">
     <p class="label kicker">Unlimited</p>
     <h1 class="display"><span>Rip another.</span><span class="l2">And another.</span></h1>
-    ${pack({ line1: 'Unlimited', line2: 'Random pack', id: 'ripPack', label: 'Rip a random pack' })}
+    ${pack({ line1: 'Unlimited', line2: 'Random pack', id: 'ripPack', label: 'Rip a random pack', inside: Object.keys(GROUPS) })}
     <button class="btn" id="ripBtn" type="button">Rip a random pack${icon('i-arrow')}</button>
     <p class="meta"><span>Best <b>${u.best || 0}</b></span><span class="dot"></span><span><b>${u.played || 0}</b> ripped</span><span class="dot"></span><span>off the daily boards</span></p>
   </section></div>`;

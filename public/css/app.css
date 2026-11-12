@@ -104,13 +104,25 @@ body.playing main{padding-bottom:24px}
 .pk__win{position:absolute;left:14%;right:14%;top:22.5%;bottom:22%;border-radius:9px;display:grid;place-items:center;background:rgba(20,10,45,.35);box-shadow:0 0 0 2px #eef0ff,0 0 0 3.6px rgba(110,96,170,.65),inset 0 0 0 1px rgba(255,255,255,.55),0 10px 24px rgba(15,5,35,.35);overflow:hidden;z-index:2}
 .pk__win svg{height:92%;width:auto;filter:drop-shadow(0 3px 6px rgba(0,0,0,.35))}
 .pk__win::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 18%,rgba(255,255,255,.2) 22%,transparent 27%,transparent 62%,rgba(255,255,255,.13) 65%,transparent 69%);pointer-events:none}
-.pk__num{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-style:italic;font-weight:900;font-stretch:78%;font-size:calc(var(--pkw-px,236px) * .2);line-height:1;color:var(--white);text-shadow:0 3px 14px rgba(10,6,40,.8);padding-top:34%}
-.pk__txt{position:absolute;left:8%;right:8%;top:80.2%;display:grid;gap:3px;justify-items:center;text-align:center;font-weight:800;font-stretch:150%;letter-spacing:.14em;text-transform:uppercase;font-size:clamp(8px,2.4vw,10.5px);line-height:1.1;z-index:2}
+.pk__txt{position:absolute;left:8%;right:8%;top:80.2%;display:grid;gap:.25em;justify-items:center;text-align:center;font-weight:800;font-stretch:150%;letter-spacing:.14em;text-transform:uppercase;font-size:4.3cqw;line-height:1.1;z-index:2}
 .pk__txt b{font-weight:900;font-size:1.12em}
+.pk__txt span{font-size:.86em;opacity:.8}
+/* what's inside: the window shows a stack of card tops, one per card, in the order they'll be dealt */
+.pk--stack .pk__logo{top:12.4%}
+.pk--stack .pk__txt{top:82.2%}
+.pk__win--stack{left:10.5%;right:10.5%;top:21.2%;bottom:19.6%;display:block;border-radius:2.6cqw;background:radial-gradient(90% 60% at 50% 0,#2c2366,#120c2c 70%)}
+.pk__card{--w:calc(66% + var(--i) * 5.6%);position:absolute;left:calc((100% - var(--w)) / 2);width:var(--w);top:calc(4.5% + var(--i) * 13.1%);height:60%;display:flex;justify-content:space-between;align-items:flex-start;padding:2.1cqw 2.4cqw;border-radius:2.3cqw 2.3cqw 0 0;background:radial-gradient(130% 120% at 50% 0,#36318a,#211d52 60%);box-shadow:inset 0 0 0 .9cqw #e8e5f5,0 -1.2cqw 2.6cqw rgba(6,2,22,.55);filter:brightness(calc(.76 + var(--i) * .04));animation:pkcard .55s cubic-bezier(.2,.9,.3,1.15) backwards;animation-delay:calc(140ms + var(--i) * 65ms);transition:transform .35s cubic-bezier(.3,.7,.3,1)}
+.pk__card b{padding:1cqw 2.1cqw;border-radius:1.4cqw;background:var(--accent);color:var(--ink);font-weight:800;font-stretch:150%;letter-spacing:.09em;font-size:3.9cqw;line-height:1.1;text-transform:uppercase;white-space:nowrap}
+.pk__badge{position:absolute;right:4%;top:17%;z-index:4;width:17.5cqw;aspect-ratio:1;border-radius:50%;display:grid;place-content:center;justify-items:center;background:var(--yellow);color:var(--ink);box-shadow:inset 0 0 0 .7cqw rgba(18,10,34,.85),inset 0 0 0 1.3cqw var(--yellow),inset 0 0 0 1.6cqw rgba(18,10,34,.35),0 1.2cqw 2.4cqw rgba(10,4,30,.45);transform:rotate(12deg);font-weight:800;font-stretch:118%;letter-spacing:.06em;font-size:2.4cqw;line-height:1;text-transform:uppercase}
+.pk__badge b{font-family:var(--display);font-style:italic;font-weight:900;font-stretch:80%;letter-spacing:-.02em;font-size:9cqw;line-height:.8;margin-bottom:.3cqw}
+.pk.is-ripping .pk__card{transform:translateY(calc(-9% - var(--i) * 1.5%))}
+.pk--now .pk__card{animation:none}
+@keyframes pkcard{from{transform:translateY(-140%);opacity:0}}
 .pk__shadow{position:absolute;left:14%;right:14%;bottom:-24px;height:20px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.5),transparent);filter:blur(3px);animation:shadow 5.5s ease-in-out infinite}
 .pk.is-ripping{animation:none;transform:scale(1.05) rotate(-1deg);transition:transform .3s}
 .pk.is-ripping .pk__top{animation:riptop .7s cubic-bezier(.5,0,.9,.4) forwards,foil 10s linear infinite}
 .pkwrap--sm{--pkw:120px;margin:0}
+@media (min-width:700px){.hero .pkwrap{--pkw:252px}}
 .pkwrap--sm .pk{animation:none;cursor:default}
 .pkwrap--sm .pk__shadow{display:none}
 @keyframes float{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-10px) rotate(-1deg)}}
