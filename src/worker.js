@@ -1,4 +1,4 @@
-// godpack DEX API: players, passkeys, server-checked daily scores, localized boards, friends, party rooms.
+// Pokerarity API (by godpack.io): players, passkeys, server-checked daily scores, localized boards, friends, party rooms.
 // Built to run untouched: edge-cached reads, rate limits, hourly cleanup and an optional daily Discord recap.
 import data from '../public/data/dex.json';
 import { makeDex, dayNumberUTC, dateOfDay, CARDS, SECONDS, cleanName, norm, rating } from '../public/js/core.js';
@@ -10,8 +10,8 @@ const HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-cont
 const json = (obj, status = 200, extra) => new Response(JSON.stringify(obj), { status, headers: { ...HEADERS, ...extra } });
 const fail = (error, status = 400) => json({ error }, status);
 const DAY_MS = 86400000;
-const CANONICAL = 'dex.godpack.live';
-const PASSKEY_HOSTS = ['dex.godpack.live', 'localhost'];
+const CANONICAL = 'pokerarity.com';
+const PASSKEY_HOSTS = ['pokerarity.com', 'localhost'];
 // plays, answer counts and tallies older than this are pruned (all-time totals live on the player row and stay)
 const KEEP_DAYS = 400;
 // personal ranks past this point read as "1,000+" so a rank lookup never scans a whole board
@@ -428,7 +428,7 @@ async function handle(req, env, ctx, url) {
     if (await limited(env, 'RL', 'pk:' + me.id)) return fail('Slow down a little', 429);
     const existing = (await env.DB.prepare('SELECT id, transports FROM passkeys WHERE player = ?').bind(me.id).all()).results;
     const options = await generateRegistrationOptions({
-      rpName: 'godpack DEX', rpID: r.rpID, userID: enc.encode(me.id), userName: me.name ? `${me.name} (${me.code})` : `Trainer ${me.code}`, userDisplayName: me.name || `Trainer ${me.code}`,
+      rpName: 'Pokerarity', rpID: r.rpID, userID: enc.encode(me.id), userName: me.name ? `${me.name} (${me.code})` : `Trainer ${me.code}`, userDisplayName: me.name || `Trainer ${me.code}`,
       attestationType: 'none', excludeCredentials: existing.map(c => ({ id: c.id, transports: c.transports ? JSON.parse(c.transports) : undefined })),
       authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }
     });
@@ -494,13 +494,15 @@ async function discordRecap(env) {
   const lines = top.map((t, i) => `**${medal[i]}** ${display(t).replace(/[*_`~|>]/g, '')}${t.country ? ` (${t.country})` : ''}: ${t.score}/700 · ${rating(t.score)}`);
   await fetch(env.DISCORD_WEBHOOK_URL, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'godpack DEX', embeds: [{ title: `Daily pack #${day} results`, description: `${lines.join('\n')}\n\n${head.n} trainer${head.n === 1 ? '' : 's'} played · average ${Math.round(head.avg)}\nToday’s pack is open: https://${CANONICAL}`, color: 0xea669c }] })
+    body: JSON.stringify({ username: 'Pokerarity', embeds: [{ title: `Daily pack #${day} results`, description: `${lines.join('\n')}\n\n${head.n} trainer${head.n === 1 ? '' : 's'} played · average ${Math.round(head.avg)}\nToday’s pack is open: https://${CANONICAL}`, color: 0xea669c }] })
   }).catch(() => {});
 }
 
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    // one address for search engines: www goes to the bare domain (the app forwards deep links too)
+    if (url.hostname === 'www.' + CANONICAL) return Response.redirect(`https://${CANONICAL}${url.pathname}${url.search}`, 301);
     if (url.pathname.startsWith('/api/')) {
       try { return await handle(req, env, ctx, url); }
       catch (e) { console.error('api error', url.pathname, e && e.stack || e); return fail('Something went wrong', 500); }

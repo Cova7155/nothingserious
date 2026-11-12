@@ -1,8 +1,10 @@
-import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=5';
+import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=6';
 
 /* ============ helpers ============ */
-const V = 5;
-const CANON = 'dex.godpack.live';
+const V = 6;
+const CANON = 'pokerarity.com';
+// older addresses that forward here, bringing each device's progress along
+const OLD_HOSTS = ['dex.godpack.live', 'www.pokerarity.com'];
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,7 +24,7 @@ const icon = (id, cls = '') => `<svg${cls ? ` class="${cls}"` : ''} aria-hidden=
 const STAT = ['HP', 'Attack', 'Defense', 'Sp. Atk', 'Sp. Def', 'Speed'];
 const REG = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar & Hisui', 9: 'Paldea' };
 const letters = s => s.normalize('NFD').replace(/[^A-Za-z]/g, '');
-const UTM = medium => `utm_source=godpack-dex&utm_medium=${medium}&utm_campaign=dex`;
+const UTM = medium => `utm_source=pokerarity&utm_medium=${medium}&utm_campaign=pokerarity`;
 const b64u = str => { const b = new TextEncoder().encode(str); let t = ''; for (let i = 0; i < b.length; i++) t += String.fromCharCode(b[i]); return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64u = str => new TextDecoder().decode(Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
 // in-app browsers (TikTok, Instagram…) usually can't use passkeys
@@ -103,7 +105,7 @@ async function geoInfo() {
   return S.geo;
 }
 
-/* ============ passkeys (optional: save your DEX, sign in anywhere) ============ */
+/* ============ passkeys (optional: save your progress, sign in anywhere) ============ */
 const passkeyHost = () => location.hostname === CANON || location.hostname === 'localhost';
 const passkeysOk = () => passkeyHost() && !!window.PublicKeyCredential;
 let wa = null;
@@ -120,7 +122,7 @@ function preparePasskey(kind) {
   promise.catch(() => { if (prepared[kind]?.promise === promise) delete prepared[kind]; });
   return promise;
 }
-const passkeyError = (e, fallback) => (inApp ? 'Passkeys need Safari or Chrome. Open this page there.' : e?.name === 'InvalidStateError' ? 'This device already has a passkey for your DEX' : fallback);
+const passkeyError = (e, fallback) => (inApp ? 'Passkeys need Safari or Chrome. Open this page there.' : e?.name === 'InvalidStateError' ? 'This device already has a passkey for your profile' : fallback);
 async function savePasskey() {
   const [{ startRegistration }, { cid, options }] = await preparePasskey('reg');
   delete prepared.reg;
@@ -170,9 +172,9 @@ function accountCard() {
   if (!passkeysOk() && !inApp) return '';
   if (S.profile?.passkeys) return `<p class="saved">${icon('i-check')}<span>Saved with a passkey</span><a href="/settings" data-link>Manage</a></p>`;
   const has = !!(S.profile?.id || Object.keys(S.history).length);
-  if (inApp) return has ? `<p class="saved saved--warn">${icon('i-key')}<span>Open this page in Safari or Chrome to save your DEX with a passkey.</span></p>` : '';
+  if (inApp) return has ? `<p class="saved saved--warn">${icon('i-key')}<span>Open this page in Safari or Chrome to save your progress with a passkey.</span></p>` : '';
   return `<section class="savecard" id="acct">
-    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${has ? 'Save your DEX' : 'Played before?'}</h2>
+    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${has ? 'Save your progress' : 'Played before?'}</h2>
       <p>${has ? 'Keep your streak safe and play on any device. Uses Face ID, fingerprint or your screen lock. No email, no password.' : 'Sign in with your passkey to bring back your streak and scores.'}</p></div></div>
     <div class="row">${has ? `<button class="btn btn--sm" type="button" data-save>Save with passkey</button><button class="link" type="button" data-signin>Already saved? Sign in</button>` : `<button class="btn btn--sm" type="button" data-signin>Sign in with passkey</button>`}</div>
   </section>`;
@@ -492,7 +494,7 @@ function todayCard(n, h) {
 }
 function dailyShare(n) {
   const h = S.history[n], res = dex.scoreRun(dex.dailyPrompts(n), h.p, 'd' + n);
-  return shareText({ label: `godpack DEX #${n}`, score: res.total, cards: res.cards, url: location.host });
+  return shareText({ label: `Pokerarity #${n}`, score: res.total, cards: res.cards, url: CANON });
 }
 async function share(text) {
   try {
@@ -724,8 +726,8 @@ function renderResults(ctx) {
     ${insertGodpack('results')}
   </div>`;
   $$('[data-k]').forEach(b => b.addEventListener('click', () => openSheet(ctx, +b.dataset.k)));
-  const shareLabel = { daily: `godpack DEX #${ctx.day}`, unlimited: 'godpack DEX Unlimited', pack: `godpack DEX · ${ctx.label}`, archive: `godpack DEX #${ctx.day} (archive)` }[ctx.mode];
-  $('#shareBtn')?.addEventListener('click', () => share(shareText({ label: shareLabel, score: res.total, cards: res.cards, url: location.host })));
+  const shareLabel = { daily: `Pokerarity #${ctx.day}`, unlimited: 'Pokerarity Unlimited', pack: `Pokerarity · ${ctx.label}`, archive: `Pokerarity #${ctx.day} (archive)` }[ctx.mode];
+  $('#shareBtn')?.addEventListener('click', () => share(shareText({ label: shareLabel, score: res.total, cards: res.cards, url: CANON })));
   $('#againBtn')?.addEventListener('click', () => (ctx.mode === 'unlimited' ? startUnlimited() : startPack(ctx.packId)));
   if (ctx.mode === 'daily') { startCountdown(today()); loadDailyExtras(ctx); }
   return res;
@@ -756,7 +758,7 @@ function renderSaveNudge() {
   if (Object.keys(S.history).length < 2 || (m.nudges || 0) >= 3 || Date.now() - (m.nudgeAt || 0) < 6 * 864e5) return;
   const { cur } = streakInfo();
   box.innerHTML = `<section class="savecard">
-    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${cur > 1 ? `Keep your ${cur}-day streak` : 'Keep your scores'}</h2><p>Save your DEX with a passkey and play on any device. No email, no password.</p></div></div>
+    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${cur > 1 ? `Keep your ${cur}-day streak` : 'Keep your scores'}</h2><p>Save your progress with a passkey and play on any device. No email, no password.</p></div></div>
     <div class="row"><button class="btn btn--sm" type="button" data-save>Save with passkey</button><button class="link" type="button" data-later>Not now</button></div>
   </section>`;
   wirePasskeys(box, () => { box.innerHTML = ''; });
@@ -894,7 +896,7 @@ function viewMe() {
   plays.forEach(([, h]) => h.t.forEach(t => tiers[t >= 0 ? t : 6]++));
   const tot = tiers.reduce((a, b) => a + b, 0) || 1;
   view().innerHTML = `<div class="col">
-    <header class="ph"><p class="label kicker">My DEX</p>
+    <header class="ph"><p class="label kicker">Your profile</p>
       <div class="ph__row"><h1 class="display ph__t" id="meName">${esc(S.profile?.name || 'New trainer')}</h1><button class="link" id="editName" type="button"${S.profile?.name ? '' : ' hidden'}>Change name</button></div>
       <form class="row" id="nameForm"${S.profile?.name ? ' hidden' : ''}><label class="sr" for="tn">Trainer name</label><input class="input" id="tn" maxlength="16" placeholder="Add a trainer name" value="${esc(S.profile?.name || '')}" autocomplete="nickname"><button class="btn btn--sm" type="submit">Save</button></form>
       <p class="ph__sub" id="meWhere">${esc([countryName(S.profile?.country), S.profile?.regionName].filter(Boolean).join(' · '))}</p>
@@ -970,11 +972,11 @@ function viewSettings() {
   const key = S.profile?.id ? `${S.profile.id}.${S.profile.key}` : '';
   const saved = !!S.profile?.passkeys, has = !!(S.profile?.id || Object.keys(S.history).length);
   const acct = !passkeysOk()
-    ? `<p class="muted">${inApp ? 'Open this page in Safari or Chrome to save your DEX with a passkey.' : 'Passkeys aren’t available in this browser.'} You can still move devices with your device key below.</p>`
+    ? `<p class="muted">${inApp ? 'Open this page in Safari or Chrome to save your progress with a passkey.' : 'Passkeys aren’t available in this browser.'} You can still move devices with your device key below.</p>`
     : saved
       ? `<p class="muted">Saved with ${S.profile.passkeys === 1 ? 'a passkey' : S.profile.passkeys + ' passkeys'}. Sign in with it on any phone or computer to pick up where you left off.</p>
         <div class="row" style="flex-wrap:wrap"><button class="btn btn--sm btn--ghost" type="button" data-save>${icon('i-key')}Add a passkey</button><button class="btn btn--sm btn--ghost" type="button" id="signOut">Sign out</button></div>`
-      : `<p class="muted">Save your DEX with a passkey to keep your streak safe and play on other devices. It uses Face ID, fingerprint or your screen lock. No email, no password.</p>
+      : `<p class="muted">Save your progress with a passkey to keep your streak safe and play on other devices. It uses Face ID, fingerprint or your screen lock. No email, no password.</p>
         <div class="row" style="flex-wrap:wrap">${has ? `<button class="btn btn--sm" type="button" data-save>${icon('i-key')}Save with passkey</button>` : ''}<button class="btn btn--sm ${has ? 'btn--ghost' : ''}" type="button" data-signin>Sign in</button></div>`;
   view().innerHTML = `<div class="col">
     <header class="ph"><p class="label kicker">Settings</p><h1 class="display ph__t">Settings</h1></header>
@@ -982,7 +984,7 @@ function viewSettings() {
       <label class="toggle"><span>Sound effects</span><input type="checkbox" id="setSound" ${S.settings.sound ? 'checked' : ''}></label>
       <label class="toggle"><span>Vibration on phones</span><input type="checkbox" id="setHap" ${S.settings.haptics ? 'checked' : ''}></label>
     </section>
-    <section class="sec" id="acct"><h2 class="display h2">Your DEX</h2>
+    <section class="sec" id="acct"><h2 class="display h2">Your progress</h2>
       ${acct}
       <details class="more"${passkeysOk() ? '' : ' open'}><summary>Device key</summary>
         <p class="muted">Copy it here and paste it on another phone or computer to carry your scores, streak and friends across. Keep it private: anyone with it can play as you.</p>
@@ -1000,7 +1002,7 @@ function viewSettings() {
   $('#copyKey').addEventListener('click', async () => { try { await navigator.clipboard.writeText(key); toast('Device key copied'); } catch { prompt('Your device key:', key); } });
   wirePasskeys($('#acct'), () => viewSettings());
   $('#signOut')?.addEventListener('click', async () => {
-    if (!confirm('Sign out on this device? Your DEX stays saved. Sign back in any time with your passkey.')) return;
+    if (!confirm('Sign out on this device? Your progress stays saved. Sign back in any time with your passkey.')) return;
     await signOut(); toast('Signed out'); go('/');
   });
   $('#restoreForm').addEventListener('submit', async e => {
@@ -1030,8 +1032,8 @@ function viewFaq() {
     ['Which forms count?', 'Each species counts once, in its standard form. Regional forms and Megas don’t change the answer, so Vulpix is a Fire-type here.'],
     ['How do the boards work?', 'Your daily score goes on today’s boards: worldwide, your country, your region and your friends. Ties go to whoever answered faster. Month adds up your daily packs this calendar month, and All-time adds up every one. Your country and region come from your connection, and only your country code shows next to your name.'],
     ['What is Hot Pack?', 'A party room for 2 to 8 players. Name a Pokémon that fits the prompt to pass the pack on, no repeats. A hidden fuse runs 10 to 30 seconds and whoever holds the pack when it pops loses a life. Last trainer standing wins.'],
-    ['Do I need an account?', 'No. Just play: your scores and streak are kept on this device. To keep them safe or play on another phone or computer, save your DEX with a passkey from My DEX. It uses Face ID, fingerprint or your screen lock, with no email and no password, and you sign in with it anywhere.'],
-    ['Who made this?', 'godpack DEX is made by godpack.io, where you can open TCG packs and collect real graded cards (18+). It’s a fan-made game and isn’t affiliated with or endorsed by Nintendo, Creatures, GAME FREAK or The Pokémon Company.']
+    ['Do I need an account?', 'No. Just play: your scores and streak are kept on this device. To keep them safe or play on another phone or computer, save your progress with a passkey from your profile. It uses Face ID, fingerprint or your screen lock, with no email and no password, and you sign in with it anywhere.'],
+    ['Who made this?', 'Pokerarity is made by godpack.io, where you can open TCG packs and collect real graded cards (18+). It’s a fan-made game and isn’t affiliated with or endorsed by Nintendo, Creatures, GAME FREAK or The Pokémon Company.']
   ];
   view().innerHTML = `<div class="col">
     <header class="ph"><p class="label kicker">How it works</p><h1 class="display ph__t">FAQ</h1></header>
@@ -1131,10 +1133,10 @@ function viewRoom(code) {
   connect();
 }
 
-/* ============ one address: dex.godpack.live ============ */
+/* ============ one address: pokerarity.com ============ */
 // old workers.dev links land here with their progress, so nobody loses a streak in the move
 function moveToCanonical() {
-  if (!location.hostname.endsWith('.workers.dev')) return false;
+  if (!location.hostname.endsWith('.workers.dev') && !OLD_HOSTS.includes(location.hostname)) return false;
   const m = {};
   if (S.profile?.id) m.p = { id: S.profile.id, key: S.profile.key };
   const unsent = Object.fromEntries(Object.entries(S.history).filter(([, h]) => !h.sent));

@@ -1,4 +1,4 @@
-// godpack DEX core: shared by the browser and the Cloudflare Worker (no DOM in here).
+// Pokerarity core: shared by the browser and the Cloudflare Worker (no DOM in here).
 
 export const CARDS = 7;
 export const SECONDS = 25;

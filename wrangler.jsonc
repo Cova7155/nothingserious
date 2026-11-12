@@ -7,7 +7,7 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/"]
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "godpack-dex", "database_id": "05b0d394-223b-4f1c-9361-e2e9b67b43b3" }
@@ -16,7 +16,11 @@
     "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
-  "routes": [{ "pattern": "dex.godpack.live", "custom_domain": true }],
+  "routes": [
+    { "pattern": "pokerarity.com", "custom_domain": true },
+    { "pattern": "www.pokerarity.com", "custom_domain": true },
+    { "pattern": "dex.godpack.live", "custom_domain": true }
+  ],
   "triggers": { "crons": ["5 * * * *"] },
   "ratelimits": [
     { "name": "RL", "namespace_id": "4401", "simple": { "limit": 30, "period": 60 } },

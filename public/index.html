@@ -3,31 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<title>godpack DEX: name the Pokémon nobody else would</title>
-<meta name="description" content="A daily Pokémon quiz. Seven prompts a day, same for everyone. Obvious answers pull Commons, deep cuts pull God Pulls. Unlimited packs, themed packs, party rooms and local leaderboards.">
+<title>Pokerarity: the daily Pokémon quiz where rare answers win</title>
+<meta name="description" content="Pokerarity is a free daily Pokémon quiz. Seven prompts a day, the same for everyone: obvious answers pull Commons, deep cuts pull God Pulls. Unlimited packs, themed packs, party rooms and leaderboards. By godpack.io.">
 <meta name="theme-color" content="#191425">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="godpack DEX">
-<meta property="og:title" content="godpack DEX: name the Pokémon nobody else would">
+<meta property="og:site_name" content="Pokerarity">
+<meta property="og:title" content="Pokerarity: name the Pokémon nobody else would">
 <meta property="og:description" content="Seven prompts a day, same for everyone. Obvious answers pull Commons. Deep cuts pull God Pulls.">
-<meta property="og:url" content="https://dex.godpack.live/">
-<meta property="og:image" content="https://dex.godpack.live/img/og.jpg">
+<meta property="og:url" content="https://pokerarity.com/">
+<meta property="og:image" content="https://pokerarity.com/img/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="godpack DEX: name the Pokémon nobody else would">
+<meta name="twitter:title" content="Pokerarity: name the Pokémon nobody else would">
 <meta name="twitter:description" content="Seven prompts a day, same for everyone. Obvious answers pull Commons. Deep cuts pull God Pulls.">
-<meta name="twitter:image" content="https://dex.godpack.live/img/og.jpg">
-<link rel="icon" type="image/png" href="/img/favicon.png">
+<meta name="twitter:image" content="https://pokerarity.com/img/og.jpg">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="icon" type="image/png" sizes="64x64" href="/img/favicon.png">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="canonical" href="https://dex.godpack.live/">
-<meta name="apple-mobile-web-app-title" content="DEX">
+<link rel="canonical" href="https://pokerarity.com/">
+<meta name="apple-mobile-web-app-title" content="Pokerarity">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preload" href="/fonts/anybody-italic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/anybody.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/data/dex.json?v=5" as="fetch" crossorigin>
-<link rel="stylesheet" href="/css/app.css?v=5">
+<link rel="preload" href="/data/dex.json?v=6" as="fetch" crossorigin>
+<link rel="stylesheet" href="/css/app.css?v=6">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -60,13 +61,13 @@
 </svg>
 
 <header class="top">
-  <a class="brand" href="/" data-link aria-label="godpack DEX home"><img src="/img/godpack-logo.webp" alt="godpack.io" width="409" height="89"><span class="pill"><i></i>Dex</span></a>
+  <div class="brand"><a class="brand__home" href="/" data-link aria-label="Pokerarity home"><img class="brand__word" src="/img/pokerarity-wordmark.svg" alt="Pokerarity" width="157" height="23"></a><a class="brand__by" href="https://godpack.io/?utm_source=pokerarity&amp;utm_medium=header&amp;utm_campaign=pokerarity" target="_blank" rel="noopener">by <img src="/img/godpack-logo.webp" alt="godpack.io" width="409" height="89"></a></div>
   <nav class="topnav" aria-label="Main">
     <a href="/" data-link data-nav="home">Daily</a>
     <a href="/unlimited" data-link data-nav="unlimited">Unlimited</a>
     <a href="/party" data-link data-nav="party">Hot Pack</a>
     <a href="/boards" data-link data-nav="boards">Boards</a>
-    <a href="/me" data-link data-nav="me">My DEX</a>
+    <a href="/me" data-link data-nav="me">Profile</a>
   </nav>
   <div class="top__tools">
     <a class="streak" href="/me" data-link id="streak" hidden aria-label="Daily streak"><svg aria-hidden="true"><use href="#i-flame"/></svg><span>0</span></a>
@@ -79,7 +80,7 @@
 </main>
 
 <footer class="foot" id="foot">
-  <a class="foot__brand" href="https://godpack.io/?utm_source=godpack-dex&amp;utm_medium=footer" target="_blank" rel="noopener"><span>Made by</span><img src="/img/godpack-logo.webp" alt="godpack.io" width="409" height="89" loading="lazy"></a>
+  <a class="foot__brand" href="https://godpack.io/?utm_source=pokerarity&amp;utm_medium=footer&amp;utm_campaign=pokerarity" target="_blank" rel="noopener"><span>Made by</span><img src="/img/godpack-logo.webp" alt="godpack.io" width="409" height="89" loading="lazy"></a>
   <p><a href="/faq" data-link>How it works</a> · <a href="/packs" data-link>Themed packs</a> · <a href="/archive" data-link>Archive</a> · <a href="/settings" data-link>Settings</a></p>
   <p class="foot__legal">Fan-made. Not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company. Pokémon names are trademarks of their owners.</p>
 </footer>
@@ -89,11 +90,11 @@
   <a href="/unlimited" data-link data-nav="unlimited"><svg aria-hidden="true"><use href="#i-inf"/></svg>Unlimited</a>
   <a href="/party" data-link data-nav="party"><svg aria-hidden="true"><use href="#i-party"/></svg>Hot Pack</a>
   <a href="/boards" data-link data-nav="boards"><svg aria-hidden="true"><use href="#i-trophy"/></svg>Boards</a>
-  <a href="/me" data-link data-nav="me"><svg aria-hidden="true"><use href="#i-user"/></svg>Me</a>
+  <a href="/me" data-link data-nav="me"><svg aria-hidden="true"><use href="#i-user"/></svg>Profile</a>
 </nav>
 
 <dialog class="sheet" id="sheet" aria-labelledby="sheetTitle"><div class="sheet__in" id="sheetIn"></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="/js/app.js?v=5"></script>
+<script type="module" src="/js/app.js?v=6"></script>
 </body>
 </html>

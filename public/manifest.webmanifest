@@ -1,7 +1,7 @@
 {
-  "name": "godpack DEX",
-  "short_name": "DEX",
-  "description": "A daily Pokémon pull game. Seven prompts, same for everyone. Name the ones nobody else would.",
+  "name": "Pokerarity",
+  "short_name": "Pokerarity",
+  "description": "The daily Pokémon quiz where rare answers win. Seven prompts, same for everyone. By godpack.io.",
   "id": "/",
   "start_url": "/?src=app",
   "scope": "/",

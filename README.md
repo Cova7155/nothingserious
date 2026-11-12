@@ -1,8 +1,8 @@
-# godpack DEX
+# Pokerarity
 
-A daily Pokémon quiz by godpack.io. Seven prompts a day, the same for everyone. Obvious answers pull Commons, deep cuts pull God Pulls.
+The daily Pokémon quiz where rare answers win, by godpack.io. Seven prompts a day, the same for everyone. Obvious answers pull Commons, deep cuts pull God Pulls.
 
-Live: https://dex.godpack.live (the old `godpack-dex.godpack-live-worker.workers.dev` address forwards here and brings each player's progress along).
+Live: https://pokerarity.com. The older addresses (`dex.godpack.live` and `godpack-dex.godpack-live-worker.workers.dev`) forward there and bring each player's progress along; `www.pokerarity.com` redirects to the bare domain.
 
 ## What's in here
 
@@ -16,6 +16,8 @@ Live: https://dex.godpack.live (the old `godpack-dex.godpack-live-worker.workers
 | `public/css/app.css` | All styles. |
 | `public/_headers` | Caching and security headers (Content-Security-Policy and friends). |
 | `public/manifest.webmanifest` | Lets players add the game to their home screen. |
+| `public/img/` | Logo (`pokerarity-wordmark.svg`), app icons, favicon and the share image (`og.jpg`). |
+| `brand/` | Logo files for everything else: wordmark (colour, white, ink), the "by godpack.io" lockup and the app icon. |
 | `src/worker.js` | The API under `/api/*`: players, passkeys, server-checked daily scores, leaderboards, friends, cleanup jobs. |
 | `src/room.js` | Hot Pack party rooms (one Cloudflare Durable Object per room). |
 | `schema.sql` | Database tables (Cloudflare D1). `migrations/` holds changes for the live database. |
@@ -25,7 +27,7 @@ Live: https://dex.godpack.live (the old `godpack-dex.godpack-live-worker.workers
 
 Nobody has to sign up. A player's scores, streak and history live on their device, and a trainer profile is made on the server the first time they post a score, pick a name or add a friend.
 
-To keep their DEX safe or play on another device, a player can **save it with a passkey** (Face ID, fingerprint or screen lock: no email, no password). Signing in with that passkey anywhere brings everything back; if they had played as a guest on that device, the guest's scores fold into their account. Passkeys work on `dex.godpack.live` (and `localhost` for testing). A device key in Settings is the backup for browsers without passkeys.
+To keep their DEX safe or play on another device, a player can **save it with a passkey** (Face ID, fingerprint or screen lock: no email, no password). Signing in with that passkey anywhere brings everything back; if they had played as a guest on that device, the guest's scores fold into their account. Passkeys work on `pokerarity.com` (and `localhost` for testing). A device key in Settings is the backup for browsers without passkeys.
 
 ## Running on its own
 
@@ -46,7 +48,7 @@ On Cloudflare's free plan the database allows about 100,000 written rows a day. 
 
 ### Keep-alive checklist
 
-- Keep `godpack.live` renewing (Cloudflare Registrar, auto-renew).
+- `pokerarity.com` and `godpack.live` renew themselves (Cloudflare Registrar, auto-renew on).
 - Secrets on the worker: `TICKET_SECRET` (required, any long random string), `DISCORD_WEBHOOK_URL` (optional).
 
 ## Run it locally
@@ -66,7 +68,7 @@ Open http://localhost:8788. `--local-upstream localhost:8788` makes the API see 
 
 ## Deploy
 
-Hosted on Cloudflare Workers (worker `godpack-dex`, D1 database `godpack-dex`, custom domain `dex.godpack.live`).
+Hosted on Cloudflare Workers (worker `godpack-dex`, D1 database `godpack-dex`, custom domains `pokerarity.com`, `www.pokerarity.com` and `dex.godpack.live`).
 
 ```bash
 CLOUDFLARE_API_TOKEN=... npx wrangler deploy

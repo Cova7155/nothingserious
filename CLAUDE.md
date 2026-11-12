@@ -1,7 +1,7 @@
-# godpack DEX: notes for Claude
+# Pokerarity: notes for Claude
 
-Owner: Cova7155 (godpack.io team). Live at https://dex.godpack.live (the old workers.dev address forwards there from the browser, carrying local progress).
-Cloudflare: worker `godpack-dex`, D1 database `godpack-dex`, Durable Object class `Room`, account id `5a9ae2c332b6a6df673aa931dbb5ff1e`, zone `godpack.live`.
+Owner: Cova7155 (godpack.io team). The game is Pokerarity, by godpack.io (formerly "godpack DEX"). Live at https://pokerarity.com. `dex.godpack.live` and the workers.dev address forward there from the browser, carrying local progress; a zone redirect rule sends `www.pokerarity.com` to the bare domain.
+Cloudflare: worker `godpack-dex`, D1 database `godpack-dex`, Durable Object class `Room`, account id `5a9ae2c332b6a6df673aa931dbb5ff1e`, zones `pokerarity.com` and `godpack.live`. Both domains are on Cloudflare Registrar with auto-renew on.
 
 ## Deploying
 - Ask the user for a Cloudflare API token and pass it as `CLOUDFLARE_API_TOKEN` (with `CLOUDFLARE_ACCOUNT_ID`). Never write a token into the repo.
@@ -14,7 +14,7 @@ Cloudflare: worker `godpack-dex`, D1 database `godpack-dex`, Durable Object clas
 - Plays older than 400 days are pruned. Never compute all-time totals from `plays`; they live on `players` and are updated on every submit and on merges.
 - Day ranks come from `tally`; the month board from `monthly`. Any code that adds, removes or moves a counted play must keep both in step (see `mergePlayers`).
 - Flagged plays (`flag` 1 = no start ticket, 2 = forged, stale or too fast) count for history and streaks only.
-- Passkeys only work on `dex.godpack.live` and `localhost` (`PASSKEY_HOSTS` in `src/worker.js`). For local passkey tests run `wrangler dev` with `--local-upstream localhost:8788`.
+- Passkeys only work on `pokerarity.com` and `localhost` (`PASSKEY_HOSTS` in `src/worker.js`, `CANON` in `public/js/app.js`). For local passkey tests run `wrangler dev` with `--local-upstream localhost:8788`.
 
 ## Reviewing pull requests (the SEO tool opens these)
 1. Read the diff. SEO changes belong in the `<head>` of `public/index.html`, `public/robots.txt`, `public/sitemap.xml` or new static pages in `public/`.
