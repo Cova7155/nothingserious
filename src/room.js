@@ -5,7 +5,7 @@ import data from '../public/data/dex.json';
 import { makeDex, cleanName } from '../public/js/core.js';
 
 const dex = makeDex(data);
-const FUSE_MIN = 10000, FUSE_MAX = 30000, FUSE_FLOOR = 8000, MAX_PLAYERS = 8;
+const FUSE_MIN = 10000, FUSE_MAX = 30000, FUSE_FLOOR = 8000, MAX_PLAYERS = 8, IDLE_WIPE = 2 * 3600e3;
 const PARTY_POOL = data.pool.map((q, i) => i).filter(i => data.pool[i].a.length >= 40 && data.pool[i].a.length <= 220);
 const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -74,7 +74,7 @@ export class Room {
         p = { pid, name, lives: 0, alive: false, host: !s.players.some(x => x.host), online: true };
         s.players.push(p);
       }
-      p.name = name; p.online = true;
+      p.name = name; p.online = true; s.idleSince = 0;
       ws.serializeAttachment({ pid });
       if (!s.players.some(x => x.host && x.online)) { s.players.forEach(x => (x.host = false)); p.host = true; }
       await this.persist();
@@ -125,7 +125,14 @@ export class Room {
 
   async alarm() {
     const s = this.s;
-    if (!s || s.phase !== 'play') return;
+    if (!s) return;
+    // nobody connected: once a room has sat empty for a while, wipe it so storage never piles up
+    if (!this.ctx.getWebSockets().length) {
+      const due = (s.idleSince || Date.now()) + IDLE_WIPE;
+      if (Date.now() >= due) { await this.ctx.storage.deleteAll(); this.s = null; } else await this.ctx.storage.setAlarm(due);
+      return;
+    }
+    if (s.phase !== 'play') return;
     if (Date.now() < s.fuseEnd - 50) { await this.ctx.storage.setAlarm(s.fuseEnd); return; }
     const holder = s.players.find(p => p.pid === s.turn);
     if (holder) {
@@ -158,6 +165,8 @@ export class Room {
     p.online = false;
     if (s.phase === 'lobby' || s.phase === 'over') s.players = s.players.filter(x => x.online || x.pid !== p.pid);
     if (p.host || !s.players.some(x => x.host)) { s.players.forEach(x => (x.host = false)); const h = s.players.find(x => x.online); if (h) h.host = true; }
+    const anyoneLeft = this.ctx.getWebSockets().some(o => o !== ws);
+    if (!anyoneLeft) { s.idleSince = Date.now(); if (s.phase === 'play') { s.phase = 'over'; s.turn = null; } await this.ctx.storage.setAlarm(s.idleSince + IDLE_WIPE); }
     await this.persist();
     this.pushState();
   }

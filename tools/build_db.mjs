@@ -4,8 +4,10 @@ import { Dex } from '@pkmn/dex';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUT = process.argv[2] || '/home/claude/dex/app/public/data/dex.json';
-const CSV = '/home/claude/dex/build/csv';
+const OUT = process.argv[2] || new URL('../public/data/dex.json', import.meta.url).pathname;
+const CSV = process.argv[3] || '/home/claude/dex/build/csv';
+// Append-only: if a previous build exists, every species and prompt keeps its index and every past daily pack stays the same.
+const PREV = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : null;
 
 /* ---------------- csv helpers ---------------- */
 function readCsv(name) {
@@ -29,9 +31,10 @@ const genus = new Map(readCsv('pokemon_species_names').filter(r => r.local_langu
 
 /* ---------------- species ---------------- */
 const base = Dex.species.all()
-  .filter(s => s.num >= 1 && s.num <= 1025 && !s.forme && s.isNonstandard !== 'CAP' && s.isNonstandard !== 'Custom')
+  .filter(s => s.num >= 1 && !s.forme && !['CAP', 'Custom', 'Future'].includes(s.isNonstandard))
   .sort((a, b) => a.num - b.num);
-if (base.length !== 1025) throw new Error('expected 1025 species, got ' + base.length);
+if (base.length < 1025) throw new Error('expected at least 1025 species, got ' + base.length);
+if (PREV && PREV.species.some((p, i) => !base[i] || base[i].id !== p.id)) throw new Error('species order changed; refusing to break old packs');
 const byId = new Map(base.map(s => [s.id, s]));
 const byName = new Map(base.map(s => [s.name, s]));
 
@@ -80,7 +83,7 @@ const species = base.map(s => {
   }
   const baby = ps && ps.is_baby === '1';
   // familiarity: how likely an average fan is to say this name (0-100)
-  let fam = GEN_BASE[s.gen];
+  let fam = GEN_BASE[s.gen] ?? 40;
   if (sStart.has(s.id)) fam += stage === 2 ? 14 : 20;
   if (tags.includes('Restricted Legendary')) fam += 24;
   else if (tags.includes('Mythical')) fam += 12;
@@ -253,6 +256,14 @@ for (const e of ['Dragon', 'Fairy', 'Monster', 'Amorphous', 'Mineral', 'Undiscov
 const ABIL = ['Levitate', 'Intimidate', 'Swift Swim', 'Chlorophyll', 'Sturdy', 'Static', 'Flash Fire', 'Pressure', 'Synchronize', 'Keen Eye', 'Thick Fat', 'Run Away', 'Water Absorb', 'Rock Head', 'Guts', 'Cursed Body', 'Technician', 'Sheer Force', 'Adaptability', 'Regenerator', 'Prankster', 'Moxie', 'Justified', 'Frisk', 'Pickup', 'Cute Charm', 'Natural Cure', 'Clear Body', 'Iron Fist', 'Inner Focus', 'Shell Armor', 'Insomnia', 'Serene Grace', 'Sniper', 'Hustle', 'Poison Point', 'Shed Skin', 'Oblivious', 'Own Tempo', 'Sand Veil', 'Swarm', 'Infiltrator', 'Unaware', 'Magic Guard', 'Huge Power'];
 for (const ab of ABIL) add('lore', 'ab:' + ab, 'Name a Pokémon that can have', ab, 'as an ability', p => p.a.includes(ab), { min: 8, max: 90 });
 
+/* ---------------- keep old indexes stable ---------------- */
+if (PREV) {
+  const fresh = new Map(pool.map(q => [q.k, q]));
+  const kept = PREV.pool.map(q => fresh.get(q.k) ? { ...fresh.get(q.k) } : { ...q, gp: q.gp });
+  const added = pool.filter(q => !PREV.pool.some(o => o.k === q.k));
+  pool.length = 0; pool.push(...kept, ...added);
+}
+
 /* ---------------- difficulty ---------------- */
 for (const q of pool) q.df = q.a.length >= 60 ? 1 : q.a.length >= 20 ? 2 : 3;
 pool.forEach((q, i) => (q.i = i));
@@ -262,9 +273,12 @@ pool.forEach((q, i) => (q.i = i));
 const GROUPS = ['type', 'region', 'name', 'stats', 'body', 'evo', 'lore'];
 const byGroup = Object.fromEntries(GROUPS.map(g => [g, pool.filter(q => q.gp === g)]));
 function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const DAYS = 1500, lastUsed = new Map(), days = [];
+const DAYS = 3650, lastUsed = new Map(), days = [];
 const r = rng(0x60D9AC);
+// published days never change: keep every day already shipped, only extend the end
+const keepDays = PREV ? PREV.days.length : 0;
 for (let d = 1; d <= DAYS; d++) {
+  if (d <= keepDays) { const row = PREV.days[d - 1]; row.forEach(i => lastUsed.set(i, d)); days.push(row); for (let k = 0; k < 7; k++) r(); continue; }
   const pick = [];
   let hard = 0;
   for (const g of GROUPS) {

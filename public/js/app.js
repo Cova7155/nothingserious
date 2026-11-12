@@ -1,7 +1,8 @@
-import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=3';
+import { makeDex, CARDS, SECONDS, TIERS, MAX_SCORE, rating, GROUPS, PACKS, dayNumber, dateOfDay, shareText, cleanName } from './core.js?v=4';
 
 /* ============ helpers ============ */
-const V = 3;
+const V = 4;
+const CANON = 'dex.godpack.live';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,6 +23,10 @@ const STAT = ['HP', 'Attack', 'Defense', 'Sp. Atk', 'Sp. Def', 'Speed'];
 const REG = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar & Hisui', 9: 'Paldea' };
 const letters = s => s.normalize('NFD').replace(/[^A-Za-z]/g, '');
 const UTM = medium => `utm_source=godpack-dex&utm_medium=${medium}&utm_campaign=dex`;
+const b64u = str => { const b = new TextEncoder().encode(str); let t = ''; for (let i = 0; i < b.length; i++) t += String.fromCharCode(b[i]); return btoa(t).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64u = str => new TextDecoder().decode(Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+// in-app browsers (TikTok, Instagram…) usually can't use passkeys
+const inApp = /FBAN|FBAV|Instagram|BytedanceWebview|musical_ly|TikTok|Snapchat|Line\//i.test(navigator.userAgent);
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('is-on');
@@ -40,6 +45,8 @@ const S = {
   history: store.get('history', {}),
   extra: store.get('extra', { unlimited: { best: 0, played: 0 }, packs: {}, archive: {} }),
   progress: store.get('progress', null),
+  meta: store.get('meta', {}),
+  geo: null,
   pid: store.get('pid', null) || (() => { const p = Math.random().toString(36).slice(2, 10); store.set('pid', p); return p; })()
 };
 const save = k => store.set(k, S[k]);
@@ -63,13 +70,113 @@ function ensurePlayer() {
   if (!playerP) playerP = api('/player/new', { method: 'POST', body: {} }).then(p => { S.profile = p; save('profile'); return p; }).finally(() => { playerP = null; });
   return playerP;
 }
-async function submitDaily(n) {
+async function submitDaily(n, retried) {
   const h = S.history[n]; if (!h || h.sent) return h?.rank || null;
   await ensurePlayer();
-  try { const r = await api('/daily/submit', { body: { day: n, picks: h.p, ms: h.ms || [] } }); h.sent = true; h.rank = r.rank; save('history'); return r.rank; }
-  catch (e) { if (e.status === 409) { h.sent = true; h.rank = e.data?.rank || null; save('history'); return h.rank; } throw e; }
+  try { const r = await api('/daily/submit', { body: { day: n, picks: h.p, ms: h.ms || [], ticket: h.ticket || null } }); h.sent = true; h.rank = r.rank; save('history'); return r.rank; }
+  catch (e) {
+    if (e.status === 409) { h.sent = true; h.rank = e.data?.rank || null; save('history'); return h.rank; }
+    // the server no longer knows this device: start a fresh profile and send the score with it (a passkey sign-in merges it back later)
+    if (e.status === 401 && !retried) { S.profile = null; store.del('profile'); return submitDaily(n, true); }
+    throw e;
+  }
 }
-async function flushPending() { for (const d of Object.keys(S.history)) { try { await submitDaily(+d); } catch { return; } } }
+async function flushPending() { for (const d of Object.keys(S.history)) { if (S.history[d].sent) continue; try { await submitDaily(+d); } catch { return; } } }
+// keep this device in step with the server (another device may have played, or a passkey sign-in merged things)
+function applyMe(me) {
+  if (!S.profile) return false;
+  Object.assign(S.profile, { name: me.name, code: me.code, country: me.country, region: me.region, regionName: me.regionName, passkeys: me.passkeys || 0 });
+  save('profile');
+  let changed = false;
+  for (const h of me.history || []) if (!S.history[h.day] || !S.history[h.day].p) { S.history[h.day] = { score: h.score, t: h.tiers, p: h.picks, at: 0, sent: true }; changed = true; }
+  if (changed) { save('history'); syncStreak(); }
+  return changed;
+}
+async function syncMe(force) {
+  if (!S.profile?.id || (!force && S.meta.synced === today())) return false;
+  try { const me = await api('/me'); S.meta.synced = today(); save('meta'); return applyMe(me); }
+  catch (e) { if (e.status === 401) { S.profile = null; store.del('profile'); } return false; }
+}
+async function geoInfo() {
+  if (S.profile?.country) return { country: S.profile.country, region: S.profile.region, regionName: S.profile.regionName };
+  if (!S.geo) S.geo = await api('/geo').catch(() => ({}));
+  return S.geo;
+}
+
+/* ============ passkeys (optional: save your DEX, sign in anywhere) ============ */
+const passkeyHost = () => location.hostname === CANON || location.hostname === 'localhost';
+const passkeysOk = () => passkeyHost() && !!window.PublicKeyCredential;
+let wa = null;
+const webauthn = () => (wa ||= import(`./vendor/webauthn.js?v=${V}`).catch(e => { wa = null; throw e; }));
+// the challenge is fetched before the tap, so the tap opens the passkey prompt straight away (Safari is strict about that)
+const prepared = {};
+function preparePasskey(kind) {
+  const hit = prepared[kind];
+  if (hit && Date.now() - hit.at < 4 * 60e3) return hit.promise;
+  const promise = Promise.all([webauthn(), kind === 'reg'
+    ? ensurePlayer().then(() => api('/passkey/register/options', { method: 'POST', body: {} }))
+    : flushPending().catch(() => {}).then(() => api('/passkey/login/options', { method: 'POST', body: {} }))]);
+  prepared[kind] = { at: Date.now(), promise };
+  promise.catch(() => { if (prepared[kind]?.promise === promise) delete prepared[kind]; });
+  return promise;
+}
+const passkeyError = (e, fallback) => (inApp ? 'Passkeys need Safari or Chrome. Open this page there.' : e?.name === 'InvalidStateError' ? 'This device already has a passkey for your DEX' : fallback);
+async function savePasskey() {
+  const [{ startRegistration }, { cid, options }] = await preparePasskey('reg');
+  delete prepared.reg;
+  let response;
+  try { response = await startRegistration({ optionsJSON: options }); } catch (e) { throw new Error(passkeyError(e, 'Passkey not saved')); }
+  const me = await api('/passkey/register/verify', { body: { cid, response } });
+  S.profile.passkeys = me.passkeys; save('profile');
+  return me;
+}
+async function signInPasskey() {
+  const [{ startAuthentication }, { cid, options }] = await preparePasskey('auth');
+  delete prepared.auth;
+  let response;
+  try { response = await startAuthentication({ optionsJSON: options }); } catch (e) { throw new Error(passkeyError(e, 'Sign-in cancelled')); }
+  const me = await api('/passkey/login/verify', { body: { cid, response } });
+  // scores this device hasn't sent yet come along to the account
+  const unsent = Object.entries(S.history).filter(([, h]) => !h.sent);
+  S.profile = { id: me.id, key: me.key, name: me.name, code: me.code, country: me.country, region: me.region, regionName: me.regionName, passkeys: me.passkeys };
+  save('profile');
+  S.history = {};
+  applyMe(me);
+  for (const [d, h] of unsent) if (!S.history[d]) S.history[d] = h;
+  save('history'); S.meta.synced = today(); save('meta'); syncStreak();
+  flushPending().catch(() => {});
+  return me;
+}
+async function signOut() {
+  await api('/signout', { method: 'POST', body: {} }).catch(() => {});
+  S.profile = null; S.history = {}; S.progress = null; myHash = null;
+  store.del('profile'); save('history'); store.del('progress'); syncStreak();
+}
+async function doSave(after) {
+  try { await savePasskey(); toast('Saved. Sign in with your passkey on any device.'); after?.(); }
+  catch (e) { toast(e.message || 'Passkey not saved'); }
+}
+async function doSignIn(after) {
+  try { const me = await signInPasskey(); toast(`Welcome back${me.name ? ', ' + me.name : ''}`); after?.(); }
+  catch (e) { toast(e.message || 'Couldn’t sign in'); }
+}
+// one place that renders the save / sign-in buttons and wires them up
+function wirePasskeys(root, after) {
+  const sv = $('[data-save]', root), si = $('[data-signin]', root);
+  if (sv) { preparePasskey('reg').catch(() => {}); sv.addEventListener('click', () => doSave(after)); }
+  if (si) { preparePasskey('auth').catch(() => {}); si.addEventListener('click', () => doSignIn(after)); }
+}
+function accountCard() {
+  if (!passkeysOk() && !inApp) return '';
+  if (S.profile?.passkeys) return `<p class="saved">${icon('i-check')}<span>Saved with a passkey</span><a href="/settings" data-link>Manage</a></p>`;
+  const has = !!(S.profile?.id || Object.keys(S.history).length);
+  if (inApp) return has ? `<p class="saved saved--warn">${icon('i-key')}<span>Open this page in Safari or Chrome to save your DEX with a passkey.</span></p>` : '';
+  return `<section class="savecard" id="acct">
+    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${has ? 'Save your DEX' : 'Played before?'}</h2>
+      <p>${has ? 'Keep your streak safe and play on any device. Uses Face ID, fingerprint or your screen lock. No email, no password.' : 'Sign in with your passkey to bring back your streak and scores.'}</p></div></div>
+    <div class="row">${has ? `<button class="btn btn--sm" type="button" data-save>Save with passkey</button><button class="link" type="button" data-signin>Already saved? Sign in</button>` : `<button class="btn btn--sm" type="button" data-signin>Sign in with passkey</button>`}</div>
+  </section>`;
+}
 async function dayStats(n, force) {
   if (!force && statsCache[n] && Date.now() - statsCache[n].at < 60000) return statsCache[n].v;
   const v = await api(`/daily/${n}/stats`); statsCache[n] = { v, at: Date.now() }; return v;
@@ -349,7 +456,8 @@ function viewHome() {
       <h1 class="display"><span>Name the Pokémon</span><span class="l2">nobody else would.</span></h1>
       ${done ? todayCard(n, done) : `${pack({ line1: `Daily pack #${n}`, id: 'ripPack', label: 'Rip today’s pack' })}
         <button class="btn" id="ripBtn" type="button">${resume ? 'Finish today’s pack' : 'Rip today’s pack'}${icon('i-arrow')}</button>
-        <p class="meta"><span><b>7</b> prompts</span><span class="dot"></span><span><b>25s</b> each</span><span class="dot"></span><span>same pack for everyone</span></p>`}
+        <p class="meta"><span><b>7</b> prompts</span><span class="dot"></span><span><b>25s</b> each</span><span class="dot"></span><span>same pack for everyone</span></p>
+        ${!S.profile?.id && !Object.keys(S.history).length && passkeysOk() ? `<a class="link back" href="/me" data-link>Played before? Sign in</a>` : ''}`}
     </section>
     ${exampleHTML()}
     <section class="tiles">
@@ -539,12 +647,15 @@ async function startDaily() {
   if (S.history[n]) return go(`/daily/${n}`, true);
   if (location.pathname !== '/') history.replaceState({}, '', '/');
   const prompts = dex.dailyPrompts(n), resume = S.progress?.day === n ? S.progress : null;
-  ensurePlayer().then(() => api('/daily/start', { body: { day: n } })).catch(() => { /* offline is fine */ });
+  // a start ticket (no account needed) lets the server tell real runs from scripted ones
+  let ticket = resume?.ticket || null, asking = false;
+  const ask = () => { if (ticket || asking) return; asking = true; api(`/daily/ticket?day=${n}`).then(r => { ticket = r.ticket; if (S.progress?.day === n) { S.progress.ticket = ticket; save('progress'); } }).catch(() => { /* offline is fine */ }).finally(() => { asking = false; }); };
+  ask();
   await ripPack(`Daily pack #${n}`, '7 cards inside');
-  const out = await runPack({ label: `Daily pack #${n}`, prompts, seed: 'd' + n, resume, onCard: (picks, ms) => { S.progress = { day: n, picks, ms }; save('progress'); } });
+  const out = await runPack({ label: `Daily pack #${n}`, prompts, seed: 'd' + n, resume, onCard: (picks, ms) => { if (picks.length < 4) ask(); S.progress = { day: n, picks, ms, ticket }; save('progress'); } });
   if (!out) return;
   const res = dex.scoreRun(prompts, out.picks, 'd' + n);
-  S.history[n] = { score: res.total, t: res.cards.map(c => c.t), p: out.picks, ms: out.ms, at: Date.now(), sent: false };
+  S.history[n] = { score: res.total, t: res.cards.map(c => c.t), p: out.picks, ms: out.ms, at: Date.now(), sent: false, ticket };
   save('history'); S.progress = null; store.del('progress'); syncStreak();
   history.replaceState({}, '', `/daily/${n}`);
   viewDailyResults(n, true);
@@ -616,9 +727,10 @@ function renderResults(ctx) {
 async function loadDailyExtras(ctx) {
   const n = ctx.day;
   try {
-    const rk = await submitDaily(n) || (await api(`/rank?day=${n}`).catch(() => null))?.rank;
+    const rk = await submitDaily(n) || (S.profile ? (await api(`/rank?day=${n}`).catch(() => null))?.rank : null);
     renderRanks(rk);
     if (!S.profile?.name) renderNameBox();
+    renderSaveNudge();
     ctx.stats = await dayStats(n, true).catch(() => null);
   } catch {
     const el = $('#ranks'); if (el) el.outerHTML = `<p class="empty">Boards are offline right now. Your score is saved here and will sync later.</p>`;
@@ -627,7 +739,22 @@ async function loadDailyExtras(ctx) {
 function renderRanks(rk) {
   const el = $('#ranks'); if (!el || !rk) return;
   const cell = (r, label, scope) => `<a href="/boards?scope=${scope}" data-link><b>${r && r.rank ? '#' + r.rank : '—'}</b><span>${esc(label)}${r && r.of ? ` · ${r.of}` : ''}</span></a>`;
+  if (rk.global?.flagged) { el.outerHTML = `<p class="empty">${flagNote(rk.global.flagged)}</p>`; return; }
   el.innerHTML = cell(rk.global, 'Worldwide', 'global') + cell(rk.country, countryName(S.profile?.country) || 'Country', 'country') + cell(rk.region, S.profile?.regionName || 'Region', 'region');
+}
+const flagNote = f => (f === 1 ? 'This run was played offline, so it’s in your history and streak but not on today’s boards.' : 'This run finished too fast to count on the boards. It’s still in your history and streak.');
+function renderSaveNudge() {
+  const box = $('#nameBox');
+  if (!box || box.firstElementChild || !passkeysOk() || !S.profile?.id || S.profile.passkeys) return;
+  const m = S.meta;
+  if (Object.keys(S.history).length < 2 || (m.nudges || 0) >= 3 || Date.now() - (m.nudgeAt || 0) < 6 * 864e5) return;
+  const { cur } = streakInfo();
+  box.innerHTML = `<section class="savecard">
+    <div class="savecard__t">${icon('i-key')}<div><h2 class="display">${cur > 1 ? `Keep your ${cur}-day streak` : 'Keep your scores'}</h2><p>Save your DEX with a passkey and play on any device. No email, no password.</p></div></div>
+    <div class="row"><button class="btn btn--sm" type="button" data-save>Save with passkey</button><button class="link" type="button" data-later>Not now</button></div>
+  </section>`;
+  wirePasskeys(box, () => { box.innerHTML = ''; });
+  $('[data-later]', box).addEventListener('click', () => { m.nudges = (m.nudges || 0) + 1; m.nudgeAt = Date.now(); save('meta'); box.innerHTML = ''; });
 }
 function renderNameBox() {
   const box = $('#nameBox'); if (!box) return;
@@ -687,46 +814,68 @@ function viewArchiveDay(d) {
 }
 
 /* ============ boards ============ */
+const PERIODS = [['day', 'Today'], ['month', 'Month'], ['all', 'All-time']];
 const boardState = { period: 'day', scope: 'global' };
-async function viewBoards() {
+// public boards are cached at the edge and carry a short hash of each player id, so we can spot our own row
+let myHash = null;
+async function idHash() {
+  const id = S.profile?.id; if (!id || !crypto.subtle) return null;
+  if (myHash?.id !== id) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)); myHash = { id, h: [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 12) }; }
+  return myHash.h;
+}
+function viewBoards() {
   const sp = new URLSearchParams(location.search);
   if (sp.get('scope')) boardState.scope = sp.get('scope');
-  if (sp.get('period')) boardState.period = sp.get('period') === 'all' ? 'all' : 'day';
+  if (PERIODS.some(([k]) => k === sp.get('period'))) boardState.period = sp.get('period');
   view().innerHTML = `<div class="col">
     <header class="ph"><p class="label kicker">Leaderboards</p><h1 class="display ph__t">Who pulled<br><span>deepest.</span></h1></header>
     <section class="sec">
-      <div class="seg" role="group" aria-label="When"><button type="button" data-p="day">Today</button><button type="button" data-p="all">All-time</button></div>
+      <div class="seg" role="group" aria-label="When">${PERIODS.map(([k, l]) => `<button type="button" data-p="${k}">${l}</button>`).join('')}</div>
       <div class="chips" id="scopes" role="group" aria-label="Where"></div>
       <div id="board"><div class="loading loading--sm"><span class="spinner"></span></div></div>
     </section>
   </div>`;
-  const draw = () => {
-    const scopes = [['global', 'Worldwide'], ['country', countryName(S.profile?.country) || 'My country'], ['region', S.profile?.regionName || 'My region'], ['friends', 'Friends']].filter(([k]) => k !== 'region' || S.profile?.regionName);
+  const draw = g => {
+    const el = $('#scopes'); if (!el) return;
+    const scopes = [['global', 'Worldwide'], ['country', g.country ? countryName(g.country) : ''], ['region', g.regionName || ''], ['friends', 'Friends']].filter(([k, l]) => k === 'global' || k === 'friends' || l);
     if (!scopes.some(([k]) => k === boardState.scope)) boardState.scope = 'global';
-    $('#scopes').innerHTML = scopes.map(([k, l]) => `<button type="button" data-s="${k}" aria-pressed="${k === boardState.scope}">${esc(l)}</button>`).join('');
+    el.innerHTML = scopes.map(([k, l]) => `<button type="button" data-s="${k}" aria-pressed="${k === boardState.scope}">${esc(l)}</button>`).join('');
     $$('[data-p]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === boardState.period)));
-    $$('[data-s]').forEach(b => b.addEventListener('click', () => { boardState.scope = b.dataset.s; draw(); loadBoard(); }));
+    $$('[data-s]', el).forEach(b => b.addEventListener('click', () => { boardState.scope = b.dataset.s; draw(g); loadBoard(); }));
   };
-  $$('[data-p]').forEach(b => b.addEventListener('click', () => { boardState.period = b.dataset.p; draw(); loadBoard(); }));
-  draw();
-  try { await ensurePlayer(); if ($('#scopes')) draw(); } catch { /* offline */ }
+  let geoNow = S.profile?.country ? { country: S.profile.country, regionName: S.profile.regionName } : S.geo || {};
+  $$('[data-p]').forEach(b => b.addEventListener('click', () => { boardState.period = b.dataset.p; draw(geoNow); loadBoard(); }));
+  draw(geoNow);
+  geoInfo().then(g => { if (g.country !== geoNow.country || g.regionName !== geoNow.regionName) { geoNow = g; draw(g); } }).catch(() => {});
   loadBoard();
 }
 async function loadBoard() {
   const el = $('#board'); if (!el) return;
   el.innerHTML = `<div class="loading loading--sm"><span class="spinner"></span></div>`;
-  const n = today();
+  const n = today(), { period, scope } = boardState, tag = (loadBoard.tag = `${period}:${scope}:${Math.random()}`);
   try {
-    const r = await api(`/board?period=${boardState.period}&scope=${boardState.scope}&day=${n}`);
-    if (!$('#board')) return;
-    const rows = r.rows || [], meIn = rows.some(x => x.me), mine = boardState.period === 'day' && S.history[n];
-    const row = x => { const inner = `<span class="r">#${x.rank}</span><span class="n">${esc(x.name || 'Trainer')}${x.cc ? `<small>${esc(x.cc)}</small>` : ''}</span><span class="s">${x.score}</span>`; return `<li class="${x.me ? 'me' : ''}">${x.me && mine ? `<a href="/daily/${n}" data-link>${inner}</a>` : `<div>${inner}</div>`}</li>`; };
-    el.innerHTML = rows.length
-      ? `<ol class="board">${rows.map(row).join('')}</ol>${r.me && !meIn ? `<ol class="board" style="margin-top:8px">${row({ rank: r.me.rank, name: 'You' + (S.profile?.name ? ' · ' + S.profile.name : ''), cc: '', score: r.me.score, me: true })}</ol>` : ''}
-        ${!S.profile?.name && (r.me || meIn) ? `<p class="muted" style="text-align:center;margin-top:14px">You show up as a Trainer number. <a href="/me" data-link>Add a name</a>.</p>` : ''}`
-      : `<p class="empty">${boardState.scope === 'friends' ? 'No friends here yet. <a href="/friends" data-link>Add a friend code</a>.' : boardState.period === 'day' ? (S.history[n] ? 'Your score is on its way to the board.' : 'Nobody here has ripped today’s pack yet. <a href="/" data-link>Be first</a>.') : 'No scores here yet.'}</p>`;
+    const g = await geoInfo();
+    const q = `period=${period}&scope=${scope}&day=${n}`;
+    const [pub, mine, h] = await Promise.all([
+      scope === 'friends' ? null : api(`/board?${q}&cc=${g.country || ''}&rg=${g.region || ''}`),
+      S.profile?.id ? api(`/board/me?${q}`).catch(() => null) : null,
+      idHash()
+    ]);
+    if (!$('#board') || loadBoard.tag !== tag) return;
+    const rows = (scope === 'friends' ? mine?.rows : pub?.rows) || [], me = mine?.me || null;
+    const isMe = x => !!h && x.h === h, meIn = rows.some(isMe), link = period === 'day' && S.history[n];
+    const row = (x, you) => { const inner = `<span class="r">${x.rank ? (x.capped ? '1k+' : '#' + x.rank) : '—'}</span><span class="n">${esc(x.name || 'Trainer')}${x.cc ? `<small>${esc(x.cc)}</small>` : ''}</span><span class="s">${x.score}</span>`; return `<li class="${you ? 'me' : ''}">${you && link ? `<a href="/daily/${n}" data-link>${inner}</a>` : `<div>${inner}</div>`}</li>`; };
+    const empty = scope === 'friends' && !S.profile?.id ? 'Swap friend codes to race your crew. <a href="/friends" data-link>Add a friend</a>.'
+      : period === 'day' ? (S.history[n] ? 'Your score is on its way to the board.' : 'Nobody here has ripped today’s pack yet. <a href="/" data-link>Be first</a>.')
+      : 'No scores here yet. <a href="/" data-link>Rip today’s pack</a>.';
+    let html = rows.length ? `<ol class="board">${rows.map(x => row(x, isMe(x))).join('')}</ol>` : `<p class="empty">${empty}</p>`;
+    if (rows.length && me?.rank && !meIn) html += `<ol class="board board--me">${row({ rank: me.rank, capped: me.capped, name: 'You' + (S.profile?.name ? ' · ' + S.profile.name : ''), score: me.score }, true)}</ol>`;
+    if (me?.flagged) html += `<p class="muted center">${flagNote(me.flagged)}</p>`;
+    else if (scope === 'friends' && rows.length === 1 && meIn) html += `<p class="muted center">Just you so far. <a href="/friends" data-link>Add a friend code</a>.</p>`;
+    if (!S.profile?.name && (me?.rank || meIn)) html += `<p class="muted center">You show up as a Trainer number. <a href="/me" data-link>Add a name</a>.</p>`;
+    el.innerHTML = html;
   } catch {
-    el.innerHTML = `<p class="empty">Boards are offline right now. Try again in a minute.</p>`;
+    if ($('#board') && loadBoard.tag === tag) el.innerHTML = `<p class="empty">Boards are offline right now. Try again in a minute.</p>`;
   }
 }
 
@@ -744,6 +893,7 @@ function viewMe() {
       <form class="row" id="nameForm"${S.profile?.name ? ' hidden' : ''}><label class="sr" for="tn">Trainer name</label><input class="input" id="tn" maxlength="16" placeholder="Add a trainer name" value="${esc(S.profile?.name || '')}" autocomplete="nickname"><button class="btn btn--sm" type="submit">Save</button></form>
       <p class="ph__sub" id="meWhere">${esc([countryName(S.profile?.country), S.profile?.regionName].filter(Boolean).join(' · '))}</p>
     </header>
+    ${accountCard()}
     <section class="stats">
       <div class="stat"><b>${plays.length}</b><span>Daily packs</span></div>
       <div class="stat"><b>${cur}</b><span>Day streak</span></div>
@@ -773,12 +923,17 @@ function viewMe() {
     try { await ensurePlayer(); const r = await api('/me/name', { body: { name } }); S.profile.name = r.name; save('profile'); $('#tn').value = r.name; $('#meName').textContent = r.name; $('#nameForm').hidden = true; $('#editName').hidden = false; toast('Name saved'); } catch (er) { toast(er.message || 'Couldn’t save that'); }
   });
   $('#editName').addEventListener('click', () => { $('#nameForm').hidden = false; $('#editName').hidden = true; $('#tn').focus(); $('#tn').select(); });
-  ensurePlayer().then(() => api('/me')).then(me => {
-    Object.assign(S.profile, { name: me.name, code: me.code, country: me.country, region: me.region, regionName: me.regionName }); save('profile');
+  wirePasskeys(view(), () => route());
+  if (!S.profile?.id) { geoInfo().then(g => { const w = $('#meWhere'); if (w && !w.textContent) w.textContent = [countryName(g.country), g.regionName].filter(Boolean).join(' · '); }).catch(() => {}); return; }
+  const had = !!S.profile.passkeys;
+  api('/me').then(me => {
+    const changed = applyMe(me);
+    if (location.pathname !== '/me') return;
+    if (changed || had !== !!me.passkeys) return route();
     const w = $('#meWhere'); if (w) w.textContent = [countryName(me.country), me.regionName].filter(Boolean).join(' · ');
     const tn = $('#tn'); if (tn && document.activeElement !== tn && !tn.value) tn.value = me.name || '';
     if (me.name && $('#meName')) { $('#meName').textContent = me.name; if ($('#nameForm') && document.activeElement !== tn) { $('#nameForm').hidden = true; $('#editName').hidden = false; } }
-  }).catch(() => { /* offline */ });
+  }).catch(e => { if (e.status === 401) { S.profile = null; store.del('profile'); } });
 }
 function viewFriends() {
   view().innerHTML = `<div class="col">
@@ -807,16 +962,27 @@ async function loadFriends() {
 }
 function viewSettings() {
   const key = S.profile?.id ? `${S.profile.id}.${S.profile.key}` : '';
+  const saved = !!S.profile?.passkeys, has = !!(S.profile?.id || Object.keys(S.history).length);
+  const acct = !passkeysOk()
+    ? `<p class="muted">${inApp ? 'Open this page in Safari or Chrome to save your DEX with a passkey.' : 'Passkeys aren’t available in this browser.'} You can still move devices with your device key below.</p>`
+    : saved
+      ? `<p class="muted">Saved with ${S.profile.passkeys === 1 ? 'a passkey' : S.profile.passkeys + ' passkeys'}. Sign in with it on any phone or computer to pick up where you left off.</p>
+        <div class="row" style="flex-wrap:wrap"><button class="btn btn--sm btn--ghost" type="button" data-save>${icon('i-key')}Add a passkey</button><button class="btn btn--sm btn--ghost" type="button" id="signOut">Sign out</button></div>`
+      : `<p class="muted">Save your DEX with a passkey to keep your streak safe and play on other devices. It uses Face ID, fingerprint or your screen lock. No email, no password.</p>
+        <div class="row" style="flex-wrap:wrap">${has ? `<button class="btn btn--sm" type="button" data-save>${icon('i-key')}Save with passkey</button>` : ''}<button class="btn btn--sm ${has ? 'btn--ghost' : ''}" type="button" data-signin>Sign in</button></div>`;
   view().innerHTML = `<div class="col">
     <header class="ph"><p class="label kicker">Settings</p><h1 class="display ph__t">Settings</h1></header>
     <section class="sec">
       <label class="toggle"><span>Sound effects</span><input type="checkbox" id="setSound" ${S.settings.sound ? 'checked' : ''}></label>
       <label class="toggle"><span>Vibration on phones</span><input type="checkbox" id="setHap" ${S.settings.haptics ? 'checked' : ''}></label>
     </section>
-    <section class="sec"><h2 class="display h2">Move devices</h2>
-      <p class="muted">Copy your device key here and paste it on your other phone or computer to carry your scores, streak and friends across. Keep it private: anyone with it can play as you.</p>
-      <div class="row" style="flex-wrap:wrap"><button class="btn btn--sm btn--ghost" id="copyKey" type="button" ${key ? '' : 'disabled'}>${icon('i-copy')}Copy my device key</button></div>
-      <form class="row" id="restoreForm"><label class="sr" for="rk">Device key</label><input class="input" id="rk" placeholder="Paste a device key" autocomplete="off"><button class="btn btn--sm" type="submit">Use</button></form>
+    <section class="sec" id="acct"><h2 class="display h2">Your DEX</h2>
+      ${acct}
+      <details class="more"${passkeysOk() ? '' : ' open'}><summary>Device key</summary>
+        <p class="muted">Copy it here and paste it on another phone or computer to carry your scores, streak and friends across. Keep it private: anyone with it can play as you.</p>
+        <div class="row" style="flex-wrap:wrap"><button class="btn btn--sm btn--ghost" id="copyKey" type="button" ${key ? '' : 'disabled'}>${icon('i-copy')}Copy my device key</button></div>
+        <form class="row" id="restoreForm"><label class="sr" for="rk">Device key</label><input class="input" id="rk" placeholder="Paste a device key" autocomplete="off"><button class="btn btn--sm" type="submit">Use</button></form>
+      </details>
     </section>
     <section class="sec"><h2 class="display h2">Reset</h2>
       <p class="muted">Clears this device’s history, streak and bests. Scores already on the boards stay.</p>
@@ -826,14 +992,18 @@ function viewSettings() {
   $('#setSound').addEventListener('change', e => { S.settings.sound = e.target.checked; save('settings'); syncSoundBtn(); if (S.settings.sound) sfx.pass(); });
   $('#setHap').addEventListener('change', e => { S.settings.haptics = e.target.checked; save('settings'); buzz(20); });
   $('#copyKey').addEventListener('click', async () => { try { await navigator.clipboard.writeText(key); toast('Device key copied'); } catch { prompt('Your device key:', key); } });
+  wirePasskeys($('#acct'), () => viewSettings());
+  $('#signOut')?.addEventListener('click', async () => {
+    if (!confirm('Sign out on this device? Your DEX stays saved. Sign back in any time with your passkey.')) return;
+    await signOut(); toast('Signed out'); go('/');
+  });
   $('#restoreForm').addEventListener('submit', async e => {
     e.preventDefault(); const v = $('#rk').value.trim(); const [id, k] = v.split('.');
     if (!id || !k) return toast('That doesn’t look like a device key');
     const prev = S.profile; S.profile = { id, key: k };
     try {
       const me = await api('/me');
-      S.profile = { id, key: k, name: me.name, code: me.code, country: me.country, region: me.region, regionName: me.regionName }; save('profile');
-      (me.history || []).forEach(x => { if (!S.history[x.day]) S.history[x.day] = { score: x.score, t: x.tiers, p: x.picks, at: 0, sent: true }; }); save('history'); syncStreak();
+      S.profile = { id, key: k }; applyMe(me); save('history'); syncStreak();
       toast('Device key accepted'); viewSettings();
     } catch { S.profile = prev; toast('That key didn’t work'); }
   });
@@ -852,9 +1022,9 @@ function viewFaq() {
     ['Can I see every answer?', 'Yes. After a pack, tap any card or row in your results to see every valid answer sorted by rarity, plus the most-said answers of the day.'],
     ['Does spelling matter?', 'A little. Small typos on longer names are fine, and spaces, accents and punctuation are ignored, so “mr mime”, “farfetchd” and “ho oh” all work.'],
     ['Which forms count?', 'Each species counts once, in its standard form. Regional forms and Megas don’t change the answer, so Vulpix is a Fire-type here.'],
-    ['How do the boards work?', 'Your daily score goes on today’s boards: worldwide, your country, your region and your friends. Ties go to whoever answered faster. All-time adds up every daily pack. Your country and region come from your connection, and only your country code shows next to your name.'],
+    ['How do the boards work?', 'Your daily score goes on today’s boards: worldwide, your country, your region and your friends. Ties go to whoever answered faster. Month adds up your daily packs this calendar month, and All-time adds up every one. Your country and region come from your connection, and only your country code shows next to your name.'],
     ['What is Hot Pack?', 'A party room for 2 to 8 players. Name a Pokémon that fits the prompt to pass the pack on, no repeats. A hidden fuse runs 10 to 30 seconds and whoever holds the pack when it pops loses a life. Last trainer standing wins.'],
-    ['Do I need an account?', 'No. You get a trainer profile on this device automatically. To move devices, copy your device key from Settings.'],
+    ['Do I need an account?', 'No. Just play: your scores and streak are kept on this device. To keep them safe or play on another phone or computer, save your DEX with a passkey from My DEX. It uses Face ID, fingerprint or your screen lock, with no email and no password, and you sign in with it anywhere.'],
     ['Who made this?', 'godpack DEX is made by godpack.io, where you can open TCG packs and collect real graded cards (18+). It’s a fan-made game and isn’t affiliated with or endorsed by Nintendo, Creatures, GAME FREAK or The Pokémon Company.']
   ];
   view().innerHTML = `<div class="col">
@@ -955,8 +1125,44 @@ function viewRoom(code) {
   connect();
 }
 
+/* ============ one address: dex.godpack.live ============ */
+// old workers.dev links land here with their progress, so nobody loses a streak in the move
+function moveToCanonical() {
+  if (!location.hostname.endsWith('.workers.dev')) return false;
+  const m = {};
+  if (S.profile?.id) m.p = { id: S.profile.id, key: S.profile.key };
+  const unsent = Object.fromEntries(Object.entries(S.history).filter(([, h]) => !h.sent));
+  if (Object.keys(unsent).length) m.h = unsent;
+  const x = S.extra;
+  if (x.unlimited.played || Object.keys(x.packs).length || Object.keys(x.archive).length) m.x = x;
+  if (store.get('settings', null)) m.s = S.settings;
+  if (S.progress) m.g = S.progress;
+  location.replace(`https://${CANON}${location.pathname}${location.search}${Object.keys(m).length ? '#m=' + b64u(JSON.stringify(m)) : ''}`);
+  return true;
+}
+function importMove() {
+  const hit = location.hash.match(/^#m=([\w-]+)$/); if (!hit) return false;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  let m; try { m = JSON.parse(unb64u(hit[1])); } catch { return false; }
+  const fresh = !S.profile?.id || !Object.keys(S.history).length;
+  if (m.p?.id && m.p.key && fresh) { S.profile = { id: m.p.id, key: m.p.key }; save('profile'); }
+  if (m.h && S.profile?.id === m.p?.id) { for (const [d, h] of Object.entries(m.h)) if (!S.history[d]) S.history[d] = h; save('history'); }
+  if (m.x) {
+    const x = S.extra;
+    x.unlimited = { best: Math.max(x.unlimited.best || 0, m.x.unlimited?.best || 0), played: Math.max(x.unlimited.played || 0, m.x.unlimited?.played || 0) };
+    x.packs = { ...(m.x.packs || {}), ...x.packs }; x.archive = { ...(m.x.archive || {}), ...x.archive }; save('extra');
+  }
+  if (m.s && !store.get('settings', null)) { S.settings = { ...S.settings, ...m.s }; save('settings'); }
+  if (m.g && !S.progress) { S.progress = m.g; save('progress'); }
+  return true;
+}
+// redraw after a background sync only when nothing is in play
+function refreshIdle() { if (!runAbort && !room && !sheetOpen() && (location.pathname === '/' || location.pathname === '/me')) route(); }
+
 /* ============ boot ============ */
 async function boot() {
+  if (moveToCanonical()) return;
+  const moved = importMove();
   syncSoundBtn();
   $('#soundBtn').addEventListener('click', () => { S.settings.sound = !S.settings.sound; save('settings'); syncSoundBtn(); if (S.settings.sound) sfx.pass(); });
   const vv = window.visualViewport;
@@ -973,6 +1179,7 @@ async function boot() {
   dex = makeDex(data);
   syncStreak();
   route();
-  ensurePlayer().then(flushPending).catch(() => { /* offline */ });
+  // no player is made just for visiting: one appears with the first score, name, friend or passkey
+  if (S.profile?.id) flushPending().then(() => syncMe(moved)).then(changed => { if (changed) refreshIdle(); }).catch(() => { /* offline */ });
 }
 boot();

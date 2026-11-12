@@ -353,7 +353,7 @@ body.playing main{padding-bottom:24px}
 .chips button{min-height:40px;padding:0 15px;border-radius:999px;border:0;background:var(--ink2);box-shadow:inset 0 0 0 1.5px var(--line);color:var(--lav);font-weight:700;font-size:13px}
 .chips button[aria-pressed="true"]{background:var(--pink);box-shadow:none;color:var(--white)}
 .board{display:grid;gap:6px;margin:0;padding:0;list-style:none}
-.board li>*{display:grid;grid-template-columns:46px 1fr auto;gap:12px;align-items:center;min-height:56px;padding:8px 16px;border-radius:14px;background:var(--ink2);text-decoration:none}
+.board li>*{display:grid;grid-template-columns:minmax(46px,auto) 1fr auto;gap:12px;align-items:center;min-height:56px;padding:8px 16px;border-radius:14px;background:var(--ink2);text-decoration:none}
 .board li.me>*{background:linear-gradient(var(--ink2),var(--ink2)) padding-box,var(--holo) border-box;border:2px solid transparent}
 .board a:hover{background:var(--ink3)}
 .board .r{font-weight:900;font-stretch:120%;color:var(--lav)}
@@ -444,6 +444,27 @@ body.playing main{padding-bottom:24px}
 ::view-transition-old(root){animation:vt-out .14s ease-in both}
 ::view-transition-new(root){animation:vt-in .22s cubic-bezier(.2,.9,.3,1) both}
 @keyframes vt-out{to{opacity:0}}
+/* ---------- your DEX: passkey save / sign in ---------- */
+.savecard{display:grid;gap:14px;padding:18px;border-radius:var(--r);background:linear-gradient(var(--ink2),var(--ink2)) padding-box,var(--holo) border-box;border:2px solid transparent}
+.savecard__t{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}
+.savecard__t>svg{width:30px;height:30px;margin-top:2px;color:var(--yellow)}
+.savecard h2{font-size:24px;margin-bottom:6px}
+.savecard p{font-size:14px;color:var(--lav)}
+.savecard .row{flex-wrap:wrap}
+.saved{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--lav)}
+.saved svg{width:18px;height:18px;flex:none;color:#b4dfb9}
+.saved a{margin-left:auto;color:var(--lav);text-underline-offset:3px}
+.saved a:hover{color:var(--white)}
+.saved--warn svg{color:var(--yellow)}
+.more{padding:2px 18px;border-radius:var(--r2);background:var(--ink2)}
+.more>summary{min-height:56px;display:flex;align-items:center;cursor:pointer;font-weight:700;list-style:none}
+.more>summary::-webkit-details-marker{display:none}
+.more>summary::after{content:"+";margin-left:auto;color:var(--lav);font-size:24px;font-weight:500;line-height:1}
+.more[open]>summary::after{content:"\2212"}
+.more[open]{display:grid;gap:12px;padding-bottom:18px}
+.board--me{margin-top:8px}
+.center{text-align:center}
+.link.back{justify-self:center;font-size:13.5px;padding:4px 6px}
 @keyframes vt-in{from{opacity:0;transform:translateY(8px)}}
 
 @media (prefers-reduced-motion:reduce){

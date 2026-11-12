@@ -1,0 +1,18 @@
+{
+  "name": "godpack-dex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8788 --local-upstream localhost:8788",
+    "deploy": "wrangler deploy",
+    "build:webauthn": "esbuild node_modules/@simplewebauthn/browser/esm/index.js --bundle --format=esm --minify --outfile=public/js/vendor/webauthn.js"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^14.1.0"
+  },
+  "devDependencies": {
+    "@pkmn/dex": "^0.11.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

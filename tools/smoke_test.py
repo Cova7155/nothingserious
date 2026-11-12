@@ -1,14 +1,18 @@
-import asyncio, json
+import asyncio, json, os, urllib.request
 from playwright.async_api import async_playwright
 D = json.load(open('public/data/dex.json')); S = D['species']
-BASE = 'http://127.0.0.1:8788'
-row = D['days'][7]
+BASE = os.environ.get('BASE', 'http://localhost:8788')
+CHROME = os.environ.get('CHROME', '/usr/bin/google-chrome')
+# today's pack, as the server sees it
+DAY = json.load(urllib.request.urlopen(BASE + '/api/health'))['day']
+row = D['days'][(DAY - 1) % len(D['days'])]
+os.makedirs('/tmp/dex-shots', exist_ok=True)
 def ans(n, mode):
     a = sorted(D['pool'][row[n]]['a'], key=lambda i: -S[i]['f'])
     return S[a[0]]['n'] if mode == 'top' else S[a[int(len(a) * .93)]]['n']
 async def run(name, vp, mobile):
     async with async_playwright() as p:
-        b = await p.chromium.launch(executable_path='/usr/bin/google-chrome')
+        b = await p.chromium.launch(executable_path=CHROME)
         ctx = await b.new_context(viewport=vp, is_mobile=mobile, has_touch=mobile, device_scale_factor=2 if mobile else 1)
         pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append('pageerror ' + str(e)))

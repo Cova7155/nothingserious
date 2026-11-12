@@ -16,5 +16,11 @@
     "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "routes": [{ "pattern": "dex.godpack.live", "custom_domain": true }],
+  "triggers": { "crons": ["5 * * * *"] },
+  "ratelimits": [
+    { "name": "RL", "namespace_id": "4401", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_NEW", "namespace_id": "4402", "simple": { "limit": 6, "period": 60 } }
+  ],
   "observability": { "enabled": true }
 }
